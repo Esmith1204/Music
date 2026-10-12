@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Vinyl placeholder from AlbumCover.tsx, with strokes thickened to read at 16px. -->
+  <rect width="32" height="32" rx="4" fill="#dedcd7"/>
+  <circle cx="16" cy="16" r="12" fill="none" stroke="#8f8c86" stroke-width="1.6"/>
+  <circle cx="16" cy="16" r="8" fill="none" stroke="#a6a39d" stroke-width="1.2"/>
+  <circle cx="16" cy="16" r="3" fill="#7a7873"/>
+</svg>
