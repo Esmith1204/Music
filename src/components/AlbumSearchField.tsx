@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useState, type KeyboardEvent } from "react";
 import { searchAlbums, type AlbumSearchResult } from "../lib/itunes";
 
 interface AlbumSearchFieldProps {
@@ -24,7 +24,6 @@ export function AlbumSearchField({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
-  const blurTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     if (selected || query.trim().length < 2) {
@@ -96,9 +95,7 @@ export function AlbumSearchField({
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
-        onBlur={() => {
-          blurTimer.current = window.setTimeout(() => setOpen(false), 120);
-        }}
+        onBlur={() => setOpen(false)}
         onKeyDown={onKeyDown}
         className="field"
       />
@@ -107,7 +104,9 @@ export function AlbumSearchField({
         <ul
           id={listId}
           role="listbox"
-          onMouseDown={() => window.clearTimeout(blurTimer.current)}
+          // Keep focus in the input while pressing a result, so the list doesn't
+          // close (on blur) before the click that selects the album lands.
+          onMouseDown={(e) => e.preventDefault()}
           className="absolute inset-x-0 top-full z-30 mt-1 max-h-80 overflow-y-auto border border-line bg-card shadow-[0_12px_32px_-12px_rgb(0_0_0/0.25)]"
         >
           {status === "loading" && results.length === 0 && (

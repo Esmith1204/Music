@@ -53,10 +53,11 @@ supabase/
 4. Copy `.env.example` to `.env.local` in the project root and fill it in:
    ```
    VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
-   VITE_SUPABASE_ANON_KEY=<publishable or anon key>
+   VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
    ```
-   `.env.local` is gitignored, so each teammate creates their own.
+   `.env.local` is gitignored, so each teammate creates their own. (`VITE_SUPABASE_ANON_KEY` is also accepted for a legacy anon key.)
 5. Restart `npm run dev`. Vite only reads env files at startup.
+   **On Vercel:** add the same two variables under **Project → Settings → Environment Variables**, then **redeploy**. Vite bakes them into the build, so changing them has no effect until the next deployment.
 6. Rate an album at `/rate`, then check **Table Editor → ratings** for the new row.
 
 Until accounts exist, every rating is saved with a dummy `user_id` (`DUMMY_USER_ID` in `src/pages/CreateRatingPage.tsx`). The table's access rules let anyone with the publishable key read and insert ratings, which is fine for a class prototype but not for production. When auth is added, follow the comments in `supabase/ratings.sql` to lock inserts to `auth.uid()`.

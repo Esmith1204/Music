@@ -1,18 +1,29 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "../types/database";
 
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+// Vite inlines these at build time: on Vercel, redeploy after changing them.
+// The key may use Supabase's current name (PUBLISHABLE_KEY) or the legacy one (ANON_KEY).
+const url = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim();
+const publicKey = (
+  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined) ??
+  (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)
+)?.trim();
 
-export const isSupabaseConfigured = Boolean(url && anonKey);
+export const isSupabaseConfigured = Boolean(url && publicKey);
+
+/** Env vars that were missing from this build, for error messages. */
+export const missingSupabaseEnv = [
+  !url && "VITE_SUPABASE_URL",
+  !publicKey && "VITE_SUPABASE_PUBLISHABLE_KEY",
+].filter((name): name is string => Boolean(name));
 
 /**
  * Typed Supabase client, or `null` until VITE_SUPABASE_URL and
- * VITE_SUPABASE_ANON_KEY are set in .env.local. The data layer (src/lib/api.ts)
- * falls back to mock data while this is null, so the UI works without a backend.
+ * VITE_SUPABASE_PUBLISHABLE_KEY are set (.env.local locally, Vercel env vars in
+ * production). The rating page reports an error while this is null.
  */
 export const supabase: SupabaseClient<Database> | null = isSupabaseConfigured
-  ? createClient<Database>(url!, anonKey!, {
+  ? createClient<Database>(url!, publicKey!, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,

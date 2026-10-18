@@ -14,7 +14,7 @@ import {
   seedProfiles,
 } from "./mockData";
 import { mockStore } from "./mockStore";
-import { supabase } from "./supabase";
+import { missingSupabaseEnv, supabase } from "./supabase";
 
 // The single data-access module the UI talks to. Every function is async and
 // returns app-level types, so swapping the mock implementation for Supabase
@@ -79,7 +79,10 @@ export async function listPostsByAuthor(authorId: string): Promise<PostWithAutho
  */
 export async function saveRating(userId: string, input: NewPostInput): Promise<PostWithAuthor> {
   if (!supabase) {
-    throw new Error("Supabase isn't connected. Add your keys to .env.local and restart the dev server.");
+    throw new Error(
+      `Supabase isn't connected: this build is missing ${missingSupabaseEnv.join(" and ")}. ` +
+        "Set it in .env.local (then restart npm run dev) or in Vercel (then redeploy).",
+    );
   }
 
   const { data: row, error } = await supabase
