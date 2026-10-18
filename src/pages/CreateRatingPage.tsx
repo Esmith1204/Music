@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import { AlbumCover } from "../components/AlbumCover";
 import { AlbumSearchField } from "../components/AlbumSearchField";
 import { ArrowRightIcon, UploadIcon } from "../components/Icons";
-import { createPost } from "../lib/api";
+import { saveRating } from "../lib/api";
 import {
   fileToCoverDataUrl,
   formatRating,
@@ -13,16 +13,21 @@ import {
 } from "../lib/format";
 import type { AlbumSearchResult } from "../lib/itunes";
 
+// No accounts yet: every rating is saved under this placeholder user.
+// Swap for the signed-in user's id once Supabase auth is added.
+const DUMMY_USER_ID = "00000000-0000-0000-0000-000000000001";
+
 interface FieldErrors {
   album?: string;
   rating?: string;
   review?: string;
-  form?: string;
 }
 
 export function CreateRatingPage() {
   const navigate = useNavigate();
   const fileInput = useRef<HTMLInputElement>(null);
+
+  const [userId] = useState(DUMMY_USER_ID);
 
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<AlbumSearchResult | null>(null);
@@ -32,6 +37,7 @@ export function CreateRatingPage() {
   const [attempted, setAttempted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const coverUrl = uploadedCover ?? selected?.coverUrl ?? null;
   const albumTitle = selected?.title ?? query.trim();
@@ -75,8 +81,9 @@ export function CreateRatingPage() {
     if (Object.keys(errors).length > 0 || rating === null || !coverUrl) return;
 
     setSubmitting(true);
+    setSubmitError(null);
     try {
-      const post = await createPost({
+      const post = await saveRating(userId, {
         album: {
           title: albumTitle,
           artist: selected?.artist ?? null,
@@ -89,7 +96,7 @@ export function CreateRatingPage() {
       navigate("/", { state: { justPosted: post.id } });
     } catch (err) {
       setSubmitting(false);
-      setUploadError(`Couldn't post your rating: ${(err as Error).message}`);
+      setSubmitError(`Couldn't save your rating: ${(err as Error).message}`);
     }
   };
 
@@ -232,12 +239,17 @@ export function CreateRatingPage() {
             )}
           </Field>
 
+          {submitError && (
+            <p role="alert" className="mt-6 border border-danger/40 bg-card px-4 py-3 text-xs text-danger">
+              {submitError}
+            </p>
+          )}
           <button
             type="submit"
             disabled={submitting}
             className="eyebrow mt-6 flex h-[58px] w-full items-center justify-between bg-ink px-5 text-paper transition-opacity hover:opacity-90 disabled:opacity-60"
           >
-            {submitting ? "Posting…" : "Continue to timeline"}
+            {submitting ? "Saving…" : "Continue to timeline"}
             <ArrowRightIcon size={16} />
           </button>
           <p className="mt-4 text-center text-[11px] text-muted">Your review will be visible to everyone.</p>

@@ -1,6 +1,6 @@
--- Music Rater: initial schema.
--- Run in Supabase → SQL Editor (or `supabase db push` once the CLI is set up).
--- Keep src/types/database.ts in sync (regenerate with `supabase gen types`).
+-- Music Rater: planned full schema (auth, profiles, friendships).
+-- NOT needed yet: the rating page currently uses supabase/ratings.sql only.
+-- When auth is added, reconcile this file's `posts` table with `ratings`.
 
 -- ─── Profiles ───────────────────────────────────────────────────────────────
 create table public.profiles (

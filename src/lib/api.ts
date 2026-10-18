@@ -14,15 +14,16 @@ import {
   seedProfiles,
 } from "./mockData";
 import { mockStore } from "./mockStore";
+import { supabase } from "./supabase";
 
 // The single data-access module the UI talks to. Every function is async and
 // returns app-level types, so swapping the mock implementation for Supabase
 // queries (see src/lib/supabase.ts and supabase/schema.sql) won't touch any
 // components.
 //
-// TODO(supabase): replace each mock body with the matching query, e.g.
-//   listTimeline  -> supabase.from("posts").select("*, author:profiles(*)").order("created_at", { ascending: false })
-//   createPost    -> upload cover to storage if it's a data URL, then supabase.from("posts").insert(...)
+// saveRating already writes to Supabase. TODO(supabase): replace the remaining
+// mock bodies with the matching query, e.g.
+//   listTimeline  -> supabase.from("ratings").select("*").order("created_at", { ascending: false })
 //   setFollowing  -> supabase.from("friendships").insert / delete
 //   getCurrentUser-> supabase.auth.getUser() + profiles row
 
@@ -71,14 +72,45 @@ export async function listPostsByAuthor(authorId: string): Promise<PostWithAutho
     .map(withAuthor);
 }
 
-export async function createPost(input: NewPostInput): Promise<PostWithAuthor> {
+/**
+ * Saves a rating to the Supabase `ratings` table (supabase/ratings.sql).
+ * `userId` is the hardcoded dummy user until auth exists. Throws if Supabase
+ * isn't configured, so a rating is never silently kept only in the browser.
+ */
+export async function saveRating(userId: string, input: NewPostInput): Promise<PostWithAuthor> {
+  if (!supabase) {
+    throw new Error("Supabase isn't connected. Add your keys to .env.local and restart the dev server.");
+  }
+
+  const { data: row, error } = await supabase
+    .from("ratings")
+    .insert({
+      user_id: userId,
+      album_title: input.album.title,
+      album_artist: input.album.artist,
+      album_year: input.album.year,
+      cover_url: input.album.coverUrl,
+      rating: input.rating,
+      review: input.review,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+
+  // The timeline still reads mock data, so mirror the saved row into it.
+  // The dummy user is shown as the mock current user.
   const post: Post = {
-    id: crypto.randomUUID(),
+    id: row.id,
     authorId: CURRENT_USER_ID,
-    album: input.album,
-    rating: input.rating,
-    review: input.review,
-    createdAt: new Date().toISOString(),
+    album: {
+      title: row.album_title,
+      artist: row.album_artist,
+      year: row.album_year,
+      coverUrl: row.cover_url,
+    },
+    rating: Number(row.rating),
+    review: row.review,
+    createdAt: row.created_at,
     likeCount: 0,
     commentCount: 0,
     repostCount: 0,

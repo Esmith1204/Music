@@ -12,7 +12,7 @@ npm run dev        # http://localhost:5173
 npm run build      # type-check + production build
 ```
 
-The app runs without a backend. Until Supabase is configured, it uses mock data. Posts you create and friends you add are saved in your browser's localStorage.
+The timeline and profiles run on mock data. The rating page (`/rate`) saves to Supabase, so it needs the setup below. Until that's done, submitting shows a "Supabase isn't connected" error.
 
 ## Routes
 
@@ -31,7 +31,7 @@ src/
   pages/        TimelinePage, CreateRatingPage, ProfilePage
   context/      SessionContext: current user (swap in Supabase auth here)
   lib/
-    api.ts        Data layer used by every page (currently backed by mock data)
+    api.ts        Data layer used by every page (saveRating → Supabase; the rest is mock data)
     supabase.ts   Typed Supabase client (null until env vars are set)
     itunes.ts     Album + cover search via the iTunes Search API
     mockData.ts   Seed users and posts
@@ -39,15 +39,30 @@ src/
     format.ts     Rating validation/formatting, time-ago, image resizing
   types/
     index.ts      App types
-    database.ts   Supabase table types (mirror supabase/schema.sql)
+    database.ts   Supabase table types (mirror the SQL files)
 supabase/
-  schema.sql    Tables, RLS policies, sign-up trigger, cover storage bucket
+  ratings.sql   The `ratings` table the rating page writes to (run this now)
+  schema.sql    Planned full schema with auth, profiles, and friendships (later)
 ```
 
-## Hooking up Supabase
+## Connecting Supabase (rating page)
 
-1. Create a Supabase project and run `supabase/schema.sql` in the SQL Editor.
-2. Copy `.env.example` to `.env.local` and fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
-3. Replace the mock bodies in `src/lib/api.ts` with Supabase queries. Each function has a matching table, and the TODO at the top of the file lists them. Components don't need changes.
-4. In `src/context/SessionContext.tsx`, load the user from `supabase.auth.getSession()` and subscribe to `onAuthStateChange`.
-5. Upload covers to the `album-covers` bucket under `<user id>/…` before inserting a post. The form currently produces a data URL for uploads.
+1. Create a project at [supabase.com](https://supabase.com/dashboard), then wait for it to finish provisioning.
+2. Open **SQL Editor → New query**, paste all of `supabase/ratings.sql`, and click **Run**. You should see "Success. No rows returned".
+3. Click **Connect** at the top of the dashboard (or go to **Project Settings → API Keys**). Copy the **Project URL** and the **publishable key**. The legacy **anon** key works too. Never use the `service_role` or secret key here.
+4. Copy `.env.example` to `.env.local` in the project root and fill it in:
+   ```
+   VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
+   VITE_SUPABASE_ANON_KEY=<publishable or anon key>
+   ```
+   `.env.local` is gitignored, so each teammate creates their own.
+5. Restart `npm run dev`. Vite only reads env files at startup.
+6. Rate an album at `/rate`, then check **Table Editor → ratings** for the new row.
+
+Until accounts exist, every rating is saved with a dummy `user_id` (`DUMMY_USER_ID` in `src/pages/CreateRatingPage.tsx`). The table's access rules let anyone with the publishable key read and insert ratings, which is fine for a class prototype but not for production. When auth is added, follow the comments in `supabase/ratings.sql` to lock inserts to `auth.uid()`.
+
+### Later
+
+- Point `listTimeline` / `listPostsByAuthor` in `src/lib/api.ts` at the `ratings` table. Right now a saved rating is copied into the local mock feed so it appears on the timeline.
+- In `src/context/SessionContext.tsx`, load the user from `supabase.auth.getSession()` and subscribe to `onAuthStateChange`.
+- Move uploaded covers (currently stored inline as data URLs) to a Storage bucket.

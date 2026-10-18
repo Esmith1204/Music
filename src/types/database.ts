@@ -1,9 +1,40 @@
-// Mirrors supabase/schema.sql. Once the project exists, regenerate this file with:
+// Mirrors supabase/ratings.sql and supabase/schema.sql. Once the project exists, regenerate this file with:
 //   npx supabase gen types typescript --project-id <id> > src/types/database.ts
 
 export type Database = {
   public: {
     Tables: {
+      // supabase/ratings.sql — what the rating page writes to today.
+      ratings: {
+        Row: {
+          id: string;
+          user_id: string;
+          album_title: string;
+          album_artist: string | null;
+          album_year: number | null;
+          cover_url: string;
+          rating: number;
+          review: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          album_title: string;
+          album_artist?: string | null;
+          album_year?: number | null;
+          cover_url: string;
+          rating: number;
+          review?: string;
+          created_at?: string;
+        };
+        Update: {
+          rating?: number;
+          review?: string;
+        };
+        Relationships: [];
+      };
+      // The tables below are the planned schema in supabase/schema.sql (with auth).
       profiles: {
         Row: {
           id: string;
