@@ -1,8 +1,8 @@
 # Music Rater
 
-A social music rating app: rate albums on a 10-point decimal scale, write short reviews, and follow friends' ratings.
+A social music rating app: rate albums on a 10-point decimal scale, or rank them by comparison against your past ratings; write short reviews; and follow friends' ratings.
 
-Built with Vite, React, TypeScript, Tailwind CSS v4, React Router, and Supabase.
+Built with Vite, React, TypeScript, Tailwind CSS v4, React Router, and Supabase (Auth, Postgres, Realtime).
 
 ## Run it
 
@@ -12,58 +12,64 @@ npm run dev        # http://localhost:5173
 npm run build      # type-check + production build
 ```
 
-The timeline and profiles run on mock data. The rating page (`/rate`) saves to Supabase, so it needs the setup below. Until that's done, submitting shows a "Supabase isn't connected" error.
+The app needs a Supabase project. See [Supabase setup](#supabase-setup).
 
 ## Routes
 
-| Path          | View                                                                   |
-| ------------- | ---------------------------------------------------------------------- |
-| `/`           | Timeline: vertical feed with Everyone / Friends tabs                   |
-| `/rate`       | Create a rating: album search with cover art, 0.0–10.0 score, 150-char review |
-| `/u/:handle`  | Profile: header stats, Add Friend, ratings grid/list, rating histogram |
-| `/profile`    | Redirects to the signed-in user's profile                              |
+| Path          | View                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------ |
+| `/login`      | Sign in. Every other page redirects here when you're signed out.                     |
+| `/signup`     | Create an account: name, handle, email, password                                     |
+| `/welcome`    | Pick a name and handle (only for accounts created without one)                       |
+| `/`           | Timeline: Everyone / Friends feeds, updates live                                     |
+| `/rate`       | Rate an album: **Score it** (0.0–10.0) or **Compare** (unlocks at 10 ratings)        |
+| `/people`     | Find people by name or handle and add them as friends                                |
+| `/u/:handle`  | Profile: live rating/follower/following counts, friends, ratings grid/list, histogram |
+| `/profile`    | Redirects to your own profile                                                        |
+
+## Rate by comparison
+
+Inspired by Beli: once you have 10 ratings, **Compare** asks whether you loved the album (7.0–10.0), thought it was fine (4.0–6.9), or didn't like it (0.0–3.9). It then asks "which did you like more?" against your past ratings in that range, using binary search (about 4 questions for 15 albums, 7 for 100). The score is the midpoint between the two albums it lands between. "Too close to call" gives it the same score. Existing ratings are never changed. The logic lives in `src/lib/compareRank.ts`.
 
 ## Project layout
 
 ```
 src/
-  components/   PostCard, AlbumCover, AlbumSearchField, Avatar, Layout, RatingHistogram, Icons
-  pages/        TimelinePage, CreateRatingPage, ProfilePage
-  context/      SessionContext: current user (swap in Supabase auth here)
+  components/   PostCard, ComparisonRater, AlbumSearchField, AuthGuards, AuthLayout, Layout, …
+  pages/        Login, SignUp, Welcome, Timeline, CreateRating, People, Profile
+  context/      SessionContext: Supabase auth session + the signed-in user's profile
+  hooks/        useAsync, useRealtimeRefresh (Supabase Realtime), useHandleCheck
   lib/
-    api.ts        Data layer used by every page (saveRating → Supabase; the rest is mock data)
-    supabase.ts   Typed Supabase client (null until env vars are set)
-    itunes.ts     Album + cover search via the iTunes Search API
-    mockData.ts   Seed users and posts
-    mockStore.ts  localStorage persistence for the mock layer
-    format.ts     Rating validation/formatting, time-ago, image resizing
-  types/
-    index.ts      App types
-    database.ts   Supabase table types (mirror the SQL files)
-supabase/
-  ratings.sql   The `ratings` table the rating page writes to (run this now)
-  schema.sql    Planned full schema with auth, profiles, and friendships (later)
+    api.ts          All Supabase reads/writes (auth, profiles, friends, ratings)
+    compareRank.ts  Rate-by-comparison logic
+    supabase.ts     Typed Supabase client
+    itunes.ts       Album + cover search via the iTunes Search API
+    format.ts       Rating/handle validation, formatting, image resizing
+  types/        App types + Supabase table types (mirror the migrations)
+supabase/migrations/
+  001_ratings.sql   ratings table (prototype)
+  002_accounts.sql  profiles, sign-up trigger, friendships, ownership rules, realtime
 ```
 
-## Connecting Supabase (rating page)
+## Supabase setup
 
-1. Create a project at [supabase.com](https://supabase.com/dashboard), then wait for it to finish provisioning.
-2. Open **SQL Editor → New query**, paste all of `supabase/ratings.sql`, and click **Run**. You should see "Success. No rows returned".
-3. Click **Connect** at the top of the dashboard (or go to **Project Settings → API Keys**). Copy the **Project URL** and the **publishable key**. The legacy **anon** key works too. Never use the `service_role` or secret key here.
-4. Copy `.env.example` to `.env.local` in the project root and fill it in:
+1. **Create a project** at [supabase.com](https://supabase.com/dashboard).
+2. **Run the migrations in order** in **SQL Editor → New query**: `001_ratings.sql` (skip it if you already ran `ratings.sql`), then `002_accounts.sql`.
+   `002` deletes any existing ratings. They belonged to the old placeholder user.
+3. **Auth settings** (Authentication in the dashboard):
+   - **Sign In / Providers → Email:** turn **Confirm email** off for class testing. With it on, new users must click an emailed link before signing in, and Supabase's built-in mailer only sends a few emails per hour.
+   - **URL Configuration:** set **Site URL** to your Vercel URL, and add `http://localhost:5173/**` and `https://<your-app>.vercel.app/**` under **Redirect URLs**. Confirmation links use these.
+4. **Keys:** click **Connect** (or **Project Settings → API Keys**) and copy the **Project URL** and **publishable key**. Never use the `service_role` or secret key here.
+5. **Local env:** create `.env.local` (gitignored):
    ```
    VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
    VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
    ```
-   `.env.local` is gitignored, so each teammate creates their own. (`VITE_SUPABASE_ANON_KEY` is also accepted for a legacy anon key.)
-5. Restart `npm run dev`. Vite only reads env files at startup.
-   **On Vercel:** add the same two variables under **Project → Settings → Environment Variables**, then **redeploy**. Vite bakes them into the build, so changing them has no effect until the next deployment.
-6. Rate an album at `/rate`, then check **Table Editor → ratings** for the new row.
+   (`VITE_SUPABASE_ANON_KEY` is also accepted for a legacy anon key.) Restart `npm run dev` after editing.
+6. **Vercel:** add the same two variables under **Project → Settings → Environment Variables**, then **redeploy**. Vite bakes them into the build.
 
-Until accounts exist, every rating is saved with a dummy `user_id` (`DUMMY_USER_ID` in `src/pages/CreateRatingPage.tsx`). The table's access rules let anyone with the publishable key read and insert ratings, which is fine for a class prototype but not for production. When auth is added, follow the comments in `supabase/ratings.sql` to lock inserts to `auth.uid()`.
+## Not built yet
 
-### Later
-
-- Point `listTimeline` / `listPostsByAuthor` in `src/lib/api.ts` at the `ratings` table. Right now a saved rating is copied into the local mock feed so it appears on the timeline.
-- In `src/context/SessionContext.tsx`, load the user from `supabase.auth.getSession()` and subscribe to `onAuthStateChange`.
-- Move uploaded covers (currently stored inline as data URLs) to a Storage bucket.
+- Likes, bookmarks, comments, and reposts on posts only toggle on screen; they aren't stored.
+- Editing your profile (name, bio, avatar) after sign-up.
+- Uploaded covers are stored inline in the rating row; moving them to Supabase Storage would be better at scale.

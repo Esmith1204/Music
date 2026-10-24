@@ -1,6 +1,6 @@
--- Music Rater: `ratings` table for the rating page (prototype, no auth yet).
--- Run once in Supabase → SQL Editor → New query → paste → Run.
--- Keep the `ratings` entry in src/types/database.ts in sync with this file.
+-- Music Rater migration 001: the `ratings` table (prototype, before accounts existed).
+-- Run once in Supabase → SQL Editor, then run 002_accounts.sql, which ties ratings to
+-- real accounts and replaces this file's open access rules.
 
 create table public.ratings (
   id           uuid primary key default gen_random_uuid(),

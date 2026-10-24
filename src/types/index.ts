@@ -1,16 +1,20 @@
 // App-level domain types (camelCase). The Supabase row types live in
 // ./database.ts; the data layer in src/lib/api.ts maps between the two.
 
+import type { RatingMethod } from "./database";
+
+export type { RatingMethod };
+
 export interface Profile {
   id: string;
   handle: string;
   displayName: string;
   avatarUrl: string | null;
-  bio: string | null;
+  bio: string;
 }
 
 export interface ProfileWithStats extends Profile {
-  postCount: number;
+  ratingCount: number;
   followerCount: number;
   followingCount: number;
 }
@@ -30,10 +34,8 @@ export interface Post {
   rating: number;
   /** At most 150 characters. Empty string when the user skipped it. */
   review: string;
+  method: RatingMethod;
   createdAt: string;
-  likeCount: number;
-  commentCount: number;
-  repostCount: number;
 }
 
 export interface PostWithAuthor extends Post {
@@ -44,6 +46,7 @@ export interface NewPostInput {
   album: Album;
   rating: number;
   review: string;
+  method: RatingMethod;
 }
 
 export type FeedScope = "everyone" | "friends";

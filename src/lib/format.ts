@@ -60,3 +60,14 @@ export function fileToCoverDataUrl(file: File, size = 600): Promise<string> {
     img.src = objectUrl;
   });
 }
+
+/** Lowercase letters, numbers, dots and underscores; 3–20 characters (matches the DB check). */
+export const HANDLE_PATTERN = /^[a-z0-9_.]{3,20}$/;
+
+export function handleError(handle: string): string | null {
+  if (!handle) return "Pick a handle.";
+  if (handle.length < 3) return "Handles need at least 3 characters.";
+  if (handle.length > 20) return "Handles can be at most 20 characters.";
+  if (!HANDLE_PATTERN.test(handle)) return "Use lowercase letters, numbers, dots, or underscores.";
+  return null;
+}

@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { PostCard } from "../components/PostCard";
+import { useCurrentUser } from "../context/SessionContext";
 import { useAsync } from "../hooks/useAsync";
+import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
 import { listTimeline } from "../lib/api";
 import type { FeedScope } from "../types";
 
@@ -11,8 +13,10 @@ const SCOPES: { value: FeedScope; label: string }[] = [
 ];
 
 export function TimelinePage() {
+  const viewer = useCurrentUser();
   const [scope, setScope] = useState<FeedScope>("everyone");
-  const { data: posts, loading, error, reload } = useAsync(() => listTimeline(scope), [scope]);
+  const { data: posts, loading, error, reload } = useAsync(() => listTimeline(scope, viewer.id), [scope, viewer.id]);
+  useRealtimeRefresh(["ratings", "friendships"], reload);
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -64,7 +68,7 @@ export function TimelinePage() {
         <ol className="flex flex-col gap-4">
           {posts.map((post) => (
             <li key={post.id}>
-              <PostCard post={post} />
+              <PostCard post={post} onDeleted={reload} />
             </li>
           ))}
         </ol>
@@ -73,12 +77,19 @@ export function TimelinePage() {
           <p className="font-serif text-2xl">Nothing here yet.</p>
           <p className="mt-2 text-sm text-muted">
             {scope === "friends"
-              ? "Add friends from their profiles to see their ratings here."
+              ? "Add friends to see their ratings here."
               : "Be the first to rate something."}
           </p>
-          <Link to="/rate" className="eyebrow mt-6 inline-block bg-ink px-5 py-3 text-paper">
-            Rate an album
-          </Link>
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <Link to="/rate" className="eyebrow inline-block bg-ink px-5 py-3 text-paper">
+              Rate an album
+            </Link>
+            {scope === "friends" && (
+              <Link to="/people" className="eyebrow inline-block border border-ink px-5 py-3">
+                Find people
+              </Link>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -1,9 +1,15 @@
-import { useId, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
-import { useNavigate } from "react-router";
+import { useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { Link, useNavigate } from "react-router";
 import { AlbumCover } from "../components/AlbumCover";
 import { AlbumSearchField } from "../components/AlbumSearchField";
+import { ComparisonRater } from "../components/ComparisonRater";
+import { Field } from "../components/FormField";
 import { ArrowRightIcon, UploadIcon } from "../components/Icons";
-import { saveRating } from "../lib/api";
+import { RecordRings } from "../components/RecordRings";
+import { useCurrentUser } from "../context/SessionContext";
+import { useAsync } from "../hooks/useAsync";
+import { listRatingsByUser, saveRating } from "../lib/api";
+import { COMPARISON_UNLOCK } from "../lib/compareRank";
 import {
   fileToCoverDataUrl,
   formatRating,
@@ -12,10 +18,7 @@ import {
   REVIEW_MAX_LENGTH,
 } from "../lib/format";
 import type { AlbumSearchResult } from "../lib/itunes";
-
-// No accounts yet: every rating is saved under this placeholder user.
-// Swap for the signed-in user's id once Supabase auth is added.
-const DUMMY_USER_ID = "00000000-0000-0000-0000-000000000001";
+import type { Album, RatingMethod } from "../types";
 
 interface FieldErrors {
   album?: string;
@@ -25,14 +28,17 @@ interface FieldErrors {
 
 export function CreateRatingPage() {
   const navigate = useNavigate();
+  const user = useCurrentUser();
   const fileInput = useRef<HTMLInputElement>(null);
-
-  const [userId] = useState(DUMMY_USER_ID);
+  // The user's past ratings: the comparison pool and the unlock count.
+  const past = useAsync(() => listRatingsByUser(user.id), [user.id]);
 
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<AlbumSearchResult | null>(null);
   const [uploadedCover, setUploadedCover] = useState<string | null>(null);
+  const [method, setMethod] = useState<RatingMethod>("manual");
   const [ratingText, setRatingText] = useState("");
+  const [comparisonScore, setComparisonScore] = useState<number | null>(null);
   const [review, setReview] = useState("");
   const [attempted, setAttempted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -41,7 +47,13 @@ export function CreateRatingPage() {
 
   const coverUrl = uploadedCover ?? selected?.coverUrl ?? null;
   const albumTitle = selected?.title ?? query.trim();
-  const rating = parseRating(ratingText);
+  const album: Album | null =
+    albumTitle && coverUrl
+      ? { title: albumTitle, artist: selected?.artist ?? null, year: selected?.year ?? null, coverUrl }
+      : null;
+  const ratingCount = past.data?.length ?? 0;
+  const comparisonUnlocked = ratingCount >= COMPARISON_UNLOCK;
+  const rating = method === "manual" ? parseRating(ratingText) : comparisonScore;
   const errors = validate();
   const visibleErrors: FieldErrors = attempted ? errors : {};
 
@@ -49,7 +61,13 @@ export function CreateRatingPage() {
     const e: FieldErrors = {};
     if (!albumTitle) e.album = "Enter the album you listened to.";
     else if (!coverUrl) e.album = "Pick an album from the search results or upload its cover.";
-    if (rating === null) e.rating = "Use a score from 0.0 to 10.0 with at most one decimal (e.g. 8.5).";
+    if (method === "manual") {
+      if (rating === null) e.rating = "Use a score from 0.0 to 10.0 with at most one decimal (e.g. 8.5).";
+    } else if (!comparisonUnlocked) {
+      e.rating = `Rating by comparison needs at least ${COMPARISON_UNLOCK} ratings. Switch to “Score it”.`;
+    } else if (rating === null) {
+      e.rating = album ? "Finish the comparison to get a score." : "Pick the album first, then compare.";
+    }
     if (review.length > REVIEW_MAX_LENGTH) e.review = `Keep it to ${REVIEW_MAX_LENGTH} characters.`;
     return e;
   }
@@ -70,6 +88,7 @@ export function CreateRatingPage() {
     setUploadError(null);
     try {
       setUploadedCover(await fileToCoverDataUrl(file));
+      setComparisonScore(null);
     } catch (err) {
       setUploadError((err as Error).message);
     }
@@ -78,21 +97,12 @@ export function CreateRatingPage() {
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setAttempted(true);
-    if (Object.keys(errors).length > 0 || rating === null || !coverUrl) return;
+    if (Object.keys(errors).length > 0 || rating === null || !album) return;
 
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const post = await saveRating(userId, {
-        album: {
-          title: albumTitle,
-          artist: selected?.artist ?? null,
-          year: selected?.year ?? null,
-          coverUrl,
-        },
-        rating,
-        review: review.trim(),
-      });
+      const post = await saveRating(user.id, { album, rating, review: review.trim(), method });
       navigate("/", { state: { justPosted: post.id } });
     } catch (err) {
       setSubmitting(false);
@@ -128,10 +138,12 @@ export function CreateRatingPage() {
                   onQueryChange={(q) => {
                     setQuery(q);
                     setSelected(null);
+                    setComparisonScore(null);
                   }}
-                  onSelect={(album) => {
-                    setSelected(album);
-                    setQuery(album.title);
+                  onSelect={(picked) => {
+                    setSelected(picked);
+                    setQuery(picked.title);
+                    setComparisonScore(null);
                   }}
                   invalid={Boolean(visibleErrors.album)}
                   describedBy={describedBy}
@@ -179,37 +191,89 @@ export function CreateRatingPage() {
             )}
           </Field>
 
-          <Field label="Your rating" htmlFor="rating" error={visibleErrors.rating} className="mt-7">
+          <Field
+            label="Your rating"
+            htmlFor={method === "manual" ? "rating" : "rating-mode-compare"}
+            error={visibleErrors.rating}
+            className="mt-7"
+          >
             {(describedBy) => (
               <>
-                <div className="relative">
-                  <input
-                    id="rating"
-                    type="text"
-                    inputMode="decimal"
-                    autoComplete="off"
-                    placeholder="Score out of 10"
-                    value={ratingText}
-                    onChange={onRatingChange}
-                    onBlur={onRatingBlur}
-                    aria-invalid={Boolean(visibleErrors.rating) || undefined}
-                    aria-describedby={describedBy}
-                    className="field pr-14"
-                  />
-                  <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm text-muted">
-                    / 10
-                  </span>
+                <div role="radiogroup" aria-label="How to rate" className="mb-3 grid grid-cols-2 border border-line p-1">
+                  <ModeButton id="rating-mode-manual" active={method === "manual"} onClick={() => setMethod("manual")}>
+                    Score it
+                  </ModeButton>
+                  <ModeButton id="rating-mode-compare" active={method === "comparison"} onClick={() => setMethod("comparison")}>
+                    Compare
+                    {!comparisonUnlocked && !past.loading && (
+                      <span className="ml-1 font-normal opacity-70">· {COMPARISON_UNLOCK}+ ratings</span>
+                    )}
+                  </ModeButton>
                 </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={10}
-                  step={0.1}
-                  value={rating ?? 0}
-                  onChange={(e) => setRatingText(formatRating(Number(e.target.value)))}
-                  aria-label="Rating slider"
-                  className="mt-3 w-full accent-ink"
-                />
+
+                {method === "manual" ? (
+                  <>
+                    <div className="relative">
+                      <input
+                        id="rating"
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        placeholder="Score out of 10"
+                        value={ratingText}
+                        onChange={onRatingChange}
+                        onBlur={onRatingBlur}
+                        aria-invalid={Boolean(visibleErrors.rating) || undefined}
+                        aria-describedby={describedBy}
+                        className="field pr-14"
+                      />
+                      <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm text-muted">
+                        / 10
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={10}
+                      step={0.1}
+                      value={rating ?? 0}
+                      onChange={(e) => setRatingText(formatRating(Number(e.target.value)))}
+                      aria-label="Rating slider"
+                      className="mt-3 w-full accent-ink"
+                    />
+                  </>
+                ) : past.loading && !past.data ? (
+                  <p className="text-sm text-muted">Loading your ratings…</p>
+                ) : past.error ? (
+                  <p className="text-sm text-danger">Couldn&rsquo;t load your ratings: {past.error.message}</p>
+                ) : !comparisonUnlocked ? (
+                  <div role="status" className="border border-line bg-card p-4 text-sm leading-relaxed">
+                    <p className="font-medium">Rating by comparison unlocks at {COMPARISON_UNLOCK} ratings.</p>
+                    <p className="mt-1 text-muted">
+                      You&rsquo;ve rated {ratingCount} {ratingCount === 1 ? "album" : "albums"} so far. Score{" "}
+                      {COMPARISON_UNLOCK - ratingCount} more with &ldquo;Score it&rdquo; and this option will rank new
+                      albums against the ones you&rsquo;ve already rated.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setMethod("manual")}
+                      className="mt-3 text-xs font-medium underline underline-offset-4"
+                    >
+                      Score it instead
+                    </button>
+                  </div>
+                ) : !album ? (
+                  <p className="border border-line bg-card p-4 text-sm text-muted">
+                    Pick the album above first, then compare it with your past ratings.
+                  </p>
+                ) : (
+                  <ComparisonRater
+                    key={`${album.title}|${album.artist}|${album.coverUrl}`}
+                    album={album}
+                    pastRatings={past.data ?? []}
+                    onScore={setComparisonScore}
+                  />
+                )}
               </>
             )}
           </Field>
@@ -252,67 +316,40 @@ export function CreateRatingPage() {
             {submitting ? "Saving…" : "Continue to timeline"}
             <ArrowRightIcon size={16} />
           </button>
-          <p className="mt-4 text-center text-[11px] text-muted">Your review will be visible to everyone.</p>
+          <p className="mt-4 text-center text-[11px] text-muted">
+            Your review will appear on{" "}
+            <Link to={`/u/${user.handle}`} className="underline underline-offset-2">
+              your profile
+            </Link>{" "}
+            and the timeline.
+          </p>
         </form>
       </section>
     </div>
   );
 }
 
-interface FieldProps {
-  label: string;
-  htmlFor: string;
-  error?: string;
-  className?: string;
-  children: (describedBy: string | undefined) => ReactNode;
-}
-
-function Field({ label, htmlFor, error, className = "", children }: FieldProps) {
-  const errorId = useId();
+function ModeButton({
+  id,
+  active,
+  onClick,
+  children,
+}: {
+  id: string;
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
   return (
-    <div className={className}>
-      <label htmlFor={htmlFor} className="mb-2.5 block text-xs font-semibold tracking-wide">
-        {label}
-      </label>
-      {children(error ? errorId : undefined)}
-      {error && (
-        <p id={errorId} className="mt-2 text-xs text-danger">
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
-
-/** The concentric "record" from the mockup; the chosen cover becomes the spinning label. */
-function RecordRings({ coverUrl, className = "" }: { coverUrl: string | null; className?: string }) {
-  const clipId = useId();
-  return (
-    <svg viewBox="0 0 600 600" aria-hidden="true" className={className}>
-      <g fill="none" stroke="var(--color-line)" strokeWidth="1.2">
-        <circle cx="300" cy="300" r="292" />
-        <circle cx="300" cy="300" r="228" />
-        <circle cx="300" cy="300" r="142" />
-      </g>
-      {coverUrl ? (
-        <g className="origin-center motion-safe:animate-[spin_14s_linear_infinite]" style={{ transformBox: "fill-box" }}>
-          <clipPath id={clipId}>
-            <circle cx="300" cy="300" r="140" />
-          </clipPath>
-          <image
-            href={coverUrl}
-            x="160"
-            y="160"
-            width="280"
-            height="280"
-            preserveAspectRatio="xMidYMid slice"
-            clipPath={`url(#${clipId})`}
-          />
-          <circle cx="300" cy="300" r="9" fill="var(--color-paper)" stroke="var(--color-rule)" />
-        </g>
-      ) : (
-        <circle cx="300" cy="300" r="38" fill="none" stroke="var(--color-rule)" strokeWidth="1.2" />
-      )}
-    </svg>
+    <button
+      id={id}
+      type="button"
+      role="radio"
+      aria-checked={active}
+      onClick={onClick}
+      className={`px-3 py-2 text-xs font-semibold transition-colors ${active ? "bg-ink text-paper" : "text-ink hover:bg-field"}`}
+    >
+      {children}
+    </button>
   );
 }
